@@ -37,6 +37,7 @@ import android.view.animation.TranslateAnimation
 import androidx.core.view.isGone
 import androidx.core.view.isVisible
 import statusbar.lyric.tools.Tools.isNotNull
+import java.util.WeakHashMap
 
 object LyricViewTools {
     private var animaList: ArrayList<Int> = arrayListOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
@@ -134,20 +135,36 @@ object LyricViewTools {
 
     private var alphaAnimation: AnimationSet? = null
 
+    // showView()/hideView() only flip visibility when their fade ends. A fade still pending from the
+    // opposite call would otherwise undo this call later (e.g. hide during a fade-in left the lyric
+    // layout visible with an empty text and just the icon), so finish our own pending fade first.
+    // clearAnimation() fires the end listener synchronously when the fade has already started.
+    private val pendingFades = WeakHashMap<View, Animation>()
+
+    private fun View.finishPendingFade() {
+        val pending = pendingFades.remove(this) ?: return
+        if (animation === pending) clearAnimation()
+    }
+
+    private fun View.startFade(fade: AnimationSet, endVisibility: Int) {
+        fade.setAnimationListener(object : Animation.AnimationListener {
+            override fun onAnimationStart(animation: Animation) {}
+            override fun onAnimationEnd(animation: Animation) {
+                if (pendingFades[this@startFade] === animation) pendingFades.remove(this@startFade)
+                visibility = endVisibility
+            }
+
+            override fun onAnimationRepeat(animation: Animation) {}
+        })
+        pendingFades[this] = fade
+        startAnimation(fade)
+    }
+
     fun View.hideView(anim: Boolean = true) {
+        finishPendingFade()
         if (isGone) return
         if (anim) {
-            alphaAnimation = getAlphaAnimation(false, 0).apply {
-                setAnimationListener(object : Animation.AnimationListener {
-                    override fun onAnimationStart(animation: Animation) {}
-                    override fun onAnimationEnd(animation: Animation) {
-                        visibility = View.GONE
-                    }
-
-                    override fun onAnimationRepeat(animation: Animation) {}
-                })
-            }
-            startAnimation(alphaAnimation)
+            alphaAnimation = getAlphaAnimation(false, 0).also { startFade(it, View.GONE) }
         } else {
             visibility = View.GONE
         }
@@ -159,17 +176,8 @@ object LyricViewTools {
     }
 
     fun View.showView() {
+        finishPendingFade()
         if (isVisible) return
-        val alphaAnimation = getAlphaAnimation(true).apply {
-            setAnimationListener(object : Animation.AnimationListener {
-                override fun onAnimationStart(animation: Animation) {}
-                override fun onAnimationEnd(animation: Animation) {
-                    visibility = View.VISIBLE
-                }
-
-                override fun onAnimationRepeat(animation: Animation) {}
-            })
-        }
-        startAnimation(alphaAnimation)
+        startFade(getAlphaAnimation(true), View.VISIBLE)
     }
 }

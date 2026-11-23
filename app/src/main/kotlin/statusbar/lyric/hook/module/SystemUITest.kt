@@ -37,6 +37,7 @@ import io.github.libxposed.api.XposedInterface
 import statusbar.lyric.R
 import statusbar.lyric.config.XposedOwnSP.config
 import statusbar.lyric.data.Data
+import statusbar.lyric.hook.AnchorMatcher
 import statusbar.lyric.hook.BaseHook
 import statusbar.lyric.hook.HookEnv
 import statusbar.lyric.hook.HookEnv.moduleRes
@@ -106,7 +107,11 @@ class SystemUITest : BaseHook() {
                                     false,
                                     0,
                                     view.textSize,
-                                    context.resources.getResourceEntryName(view.id)
+                                    context.resources.getResourceEntryName(view.id),
+                                    resName = AnchorMatcher.resourceNameOf(view),
+                                    parentResName = AnchorMatcher.resourceNameOf(parentView),
+                                    textSizeDp = AnchorMatcher.pxToDp(view),
+                                    textSizeSp = AnchorMatcher.pxToSp(view),
                                 )
                                 var index = 0
                                 val exists = dataHashMap.values.any { data ->

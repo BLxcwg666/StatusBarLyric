@@ -206,6 +206,10 @@ fun ChooseDialog(showDialog: MutableState<Boolean>, data: Data) {
                     config.parentViewId = data.parentViewId
                     config.index = data.index
                     config.textSize = data.textSize
+                    config.textViewResName = data.resName
+                    config.parentViewResName = data.parentResName
+                    config.textSizeDp = data.textSizeDp
+                    config.textSizeSp = data.textSizeSp
                     showDialog.value = false
                 }
             )

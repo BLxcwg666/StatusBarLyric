@@ -34,6 +34,10 @@ class Data private constructor(parcel: Parcel) : Parcelable {
     var index: Int = 0
     var textSize: Float = 0f
     var idName: String = ""
+    var resName: String = ""
+    var parentResName: String = ""
+    var textSizeDp: Float = 0f
+    var textSizeSp: Float = 0f
     override fun describeContents(): Int {
         return 0
     }
@@ -47,7 +51,11 @@ class Data private constructor(parcel: Parcel) : Parcelable {
         isRepeat: Boolean,
         index: Int,
         size: Float,
-        idName: String
+        idName: String,
+        resName: String = "",
+        parentResName: String = "",
+        textSizeDp: Float = 0f,
+        textSizeSp: Float = 0f,
     ) : this() {
         this.textViewClassName = textViewClassName
         this.textViewId = textViewId
@@ -57,6 +65,10 @@ class Data private constructor(parcel: Parcel) : Parcelable {
         this.index = index
         this.textSize = size
         this.idName = idName
+        this.resName = resName
+        this.parentResName = parentResName
+        this.textSizeDp = textSizeDp
+        this.textSizeSp = textSizeSp
     }
 
     override fun writeToParcel(dest: Parcel, flags: Int) {
@@ -69,6 +81,10 @@ class Data private constructor(parcel: Parcel) : Parcelable {
             writeInt(index)
             writeFloat(textSize)
             writeString(idName)
+            writeString(resName)
+            writeString(parentResName)
+            writeFloat(textSizeDp)
+            writeFloat(textSizeSp)
         }
     }
 
@@ -81,6 +97,10 @@ class Data private constructor(parcel: Parcel) : Parcelable {
         index = parcel.readInt()
         textSize = parcel.readFloat()
         idName = parcel.readString().toString()
+        resName = parcel.readString().orEmpty()
+        parentResName = parcel.readString().orEmpty()
+        textSizeDp = parcel.readFloat()
+        textSizeSp = parcel.readFloat()
     }
 
     companion object CREATOR : Parcelable.Creator<Data> {
@@ -94,6 +114,6 @@ class Data private constructor(parcel: Parcel) : Parcelable {
     }
 
     override fun toString(): String {
-        return "Data(textViewClassName='$textViewClassName', textViewId=$textViewId, parentViewClassName='$parentViewClassName', parentViewId=$parentViewId, isRepeat=$isRepeat, index=$index, textSize=$textSize idName=$idName)"
+        return "Data(textViewClassName='$textViewClassName', textViewId=$textViewId, parentViewClassName='$parentViewClassName', parentViewId=$parentViewId, isRepeat=$isRepeat, index=$index, textSize=$textSize idName=$idName, resName=$resName, parentResName=$parentResName, textSizeDp=$textSizeDp, textSizeSp=$textSizeSp)"
     }
 }

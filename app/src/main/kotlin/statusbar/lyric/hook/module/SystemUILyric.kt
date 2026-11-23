@@ -61,6 +61,7 @@ import com.hchen.superlyricapi.model.PlaybackState as LyricPlaybackState
 import com.hchen.superlyricapi.model.Stop
 import statusbar.lyric.R
 import statusbar.lyric.config.XposedOwnSP.config
+import statusbar.lyric.hook.AnchorMatcher
 import statusbar.lyric.hook.BaseHook
 import statusbar.lyric.hook.HookEnv
 import statusbar.lyric.hook.HookEnv.moduleRes
@@ -89,7 +90,6 @@ import statusbar.lyric.tools.Tools.ifNotNull
 import statusbar.lyric.tools.Tools.isLandscape
 import statusbar.lyric.tools.Tools.isNot
 import statusbar.lyric.tools.Tools.isNotNull
-import statusbar.lyric.tools.Tools.isTargetView
 import statusbar.lyric.tools.Tools.observableChange
 import statusbar.lyric.tools.Tools.shell
 import statusbar.lyric.tools.XiaomiUtils.isHyperOS
@@ -233,14 +233,7 @@ class SystemUILyric : BaseHook() {
                         if (!canLoad) return@after
 
                         val view = (hookParam.thisObject as View)
-                        if (view.isTargetView()) {
-                            clockView = view as TextView
-                            targetView = (clockView.parent as LinearLayout).apply {
-                                gravity = Gravity.CENTER
-                            }
-                            canLoad = false
-                            lyricInit()
-                        }
+                        if (AnchorMatcher.isTargetView(view)) captureAnchor(view as TextView)
                     }
                 }
 
@@ -248,10 +241,12 @@ class SystemUILyric : BaseHook() {
                 .createHook {
                     after { hookParam ->
                         val view = (hookParam.thisObject as View)
-                        if (view.isTargetView()) {
+                        // Only the clock actually in use matters; look-alike clocks detaching must not reset it.
+                        if (isReady && !canLoad && view === clockView) {
                             "Running onDetachedFromWindow".log()
                             canLoad = true
                             updateLyricState(showLyric = false, showFocus = false)
+                            scheduleAnchorRescan()
                         }
                     }
                 }
@@ -494,6 +489,45 @@ class SystemUILyric : BaseHook() {
         XiaomiHooks.init(this)
     }
 
+    private fun captureAnchor(view: TextView) {
+        clockView = view
+        targetView = (view.parent as LinearLayout).apply {
+            gravity = Gravity.CENTER
+        }
+        canLoad = false
+        handler.removeCallbacks(anchorRescanRunnable)
+        lyricInit()
+    }
+
+    private val anchorRescanDelays = longArrayOf(500L, 1500L, 3000L, 10000L, 30000L)
+    private var anchorRescanAttempt = 0
+
+    // After a status bar rebuild the new clock may already be laid out before the old one detached,
+    // and an unchanged-width clock can go a long time without another onLayout, so go look for it.
+    private val anchorRescanRunnable = object : Runnable {
+        override fun run() {
+            if (!canLoad) return
+            val view = AnchorMatcher.findInWindows()
+            if (view != null) {
+                "Anchor recovered by window scan".log()
+                captureAnchor(view)
+                return
+            }
+            anchorRescanAttempt++
+            if (anchorRescanAttempt < anchorRescanDelays.size) {
+                handler.postDelayed(this, anchorRescanDelays[anchorRescanAttempt])
+            } else {
+                "Anchor not found after window scans".log()
+            }
+        }
+    }
+
+    private fun scheduleAnchorRescan() {
+        anchorRescanAttempt = 0
+        handler.removeCallbacks(anchorRescanRunnable)
+        handler.postDelayed(anchorRescanRunnable, anchorRescanDelays[0])
+    }
+
     private fun lyricInit() {
         goMainThread(1) {
             "LyricView init".log()
@@ -598,6 +632,7 @@ class SystemUILyric : BaseHook() {
 
     // Held in a field: SharedPreferences implementations may only keep weak references to listeners.
     private val configChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        handler.post { AnchorMatcher.invalidate() }
         handler.removeCallbacks(configChangedRunnable)
         handler.postDelayed(configChangedRunnable, 300)
     }
@@ -620,6 +655,7 @@ class SystemUILyric : BaseHook() {
     }
 
     private fun onLyricChanged(view: LyricView) {
+        if (canLoad && !handler.hasCallbacks(anchorRescanRunnable)) scheduleAnchorRescan()
         if (!isReady) return
         when (view.state) {
             LyricPlaybackState.BUFFERING -> return
@@ -724,8 +760,10 @@ class SystemUILyric : BaseHook() {
         if (!isReady || !isMusicPlaying || lyric.isEmpty() || isScreenLocked) return
 
         "Showing LyricView".log()
+        // Must flip before posting: a hideLyric() queued ahead of this block checks isHiding and
+        // would otherwise skip itself, leaving the lyric shown after a quick resume→pause.
+        isHiding = false
         goMainThread {
-            isHiding = false
             lastColor = clockView.currentTextColor
             lyricLayout.cancelAnimation()
             lyricLayout.showView()

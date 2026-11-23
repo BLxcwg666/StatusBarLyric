@@ -137,6 +137,38 @@ class Config(sharedPreferences: SharedPreferences?, readOnly: Boolean = false) {
             config.put("textSize", value)
         }
 
+    // Full resource names ("pkg:id/entry") survive SystemUI updates, unlike the numeric IDs above.
+    var textViewResName: String
+        get() {
+            return config.opt("textViewResName", "")
+        }
+        set(value) {
+            config.put("textViewResName", value)
+        }
+    var parentViewResName: String
+        get() {
+            return config.opt("parentViewResName", "")
+        }
+        set(value) {
+            config.put("parentViewResName", value)
+        }
+
+    // Density / font-scale independent copies of textSize, so resolution or font size changes keep the anchor.
+    var textSizeDp: Float
+        get() {
+            return config.opt("textSizeDp", 0f)
+        }
+        set(value) {
+            config.put("textSizeDp", value)
+        }
+    var textSizeSp: Float
+        get() {
+            return config.opt("textSizeSp", 0f)
+        }
+        set(value) {
+            config.put("textSizeSp", value)
+        }
+
     var lyricSize: Int
         get() {
             return config.opt("lyricSize", 0)
