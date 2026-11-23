@@ -29,6 +29,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Point
@@ -36,11 +38,11 @@ import android.graphics.PorterDuff
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.media.session.PlaybackState
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
+import android.util.Base64
 import android.util.DisplayMetrics
 import android.util.TypedValue
 import android.view.Gravity
@@ -51,11 +53,12 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.graphics.toColorInt
-import androidx.core.util.Consumer
-import com.hchen.superlyricapi.ISuperLyric
-import com.hchen.superlyricapi.SuperLyricData
-import com.hchen.superlyricapi.SuperLyricTool
-import com.hchen.superlyricapi.SuperLyricTool.base64ToBitmap
+import com.hchen.superlyricapi.LyricListener
+import com.hchen.superlyricapi.LyricView
+import com.hchen.superlyricapi.Receiver
+import com.hchen.superlyricapi.SuperLyric
+import com.hchen.superlyricapi.model.PlaybackState as LyricPlaybackState
+import com.hchen.superlyricapi.model.Stop
 import statusbar.lyric.R
 import statusbar.lyric.config.XposedOwnSP.config
 import statusbar.lyric.hook.BaseHook
@@ -575,8 +578,7 @@ class SystemUILyric : BaseHook() {
         autoHideController!!.callMethod("touchAutoHide")
     }
 
-    private var lastArtist: String = ""
-    private var lastAlbum: String = ""
+    private var lastTrackId: String = ""
     private var playingApp: String = ""
     private var updateConfig: UpdateConfig = UpdateConfig()
     private var screenLockReceiver: ScreenLockReceiver = ScreenLockReceiver()
@@ -599,63 +601,93 @@ class SystemUILyric : BaseHook() {
         handler.removeCallbacks(configChangedRunnable)
         handler.postDelayed(configChangedRunnable, 300)
     }
-    private val showTitleConsumer: Consumer<SuperLyricData> = object : Consumer<SuperLyricData> {
-        override fun accept(value: SuperLyricData) {
-            if (!isMusicPlaying) return
-            if (playingApp != value.packageName) return
+    private fun showTitle(trackTitle: String, publisher: String) {
+        if (!isMusicPlaying) return
+        if (playingApp != publisher) return
 
-            this@SystemUILyric.title = value.title
+        this@SystemUILyric.title = trackTitle
+    }
+
+    // SuperLyricApi 4.x may call back on binder or library worker threads, so everything hops to main.
+    private val lyricListener = object : LyricListener {
+        override fun onLyric(view: LyricView) {
+            handler.post { onLyricChanged(view) }
+        }
+
+        override fun onStop(stop: Stop) {
+            handler.post { onLyricStopped(stop.publisher) }
+        }
+    }
+
+    private fun onLyricChanged(view: LyricView) {
+        if (!isReady) return
+        when (view.state) {
+            LyricPlaybackState.BUFFERING -> return
+            // 4.x no longer sends onStop on pause; old SuperLyric did, and hiding on pause is the expected behavior.
+            LyricPlaybackState.PAUSED, LyricPlaybackState.STOPPED, LyricPlaybackState.ERROR -> {
+                onLyricStopped(view.publisher)
+                return
+            }
+
+            else -> {}
+        }
+
+        val publisher = view.publisher.orEmpty()
+        val lyric = view.lyric
+        playingApp = publisher
+        if (config.titleSwitch && lastTrackId != lyric.id) {
+            lastTrackId = lyric.id
+            val trackTitle = lyric.title
+            if (lastRunnable.isNotNull()) handler.removeCallbacks(lastRunnable!!)
+            lastRunnable = Runnable { showTitle(trackTitle, publisher) }
+
+            ("Title: " + lyric.title + ", Artist: " + lyric.artist + ", Album: " + lyric.album).log()
+        }
+        val line = view.line ?: return
+        if (line.text.isEmpty()) return
+        isMusicPlaying = true
+        lastLyric = line.text
+        if (lastRunnable.isNotNull()) handler.postDelayed(lastRunnable!!, 800)
+
+        changeIcon(publisher)
+        val speed = if (view.speed > 0f) view.speed else 1f
+        val lineDuration = ((line.end - line.start) / speed).toInt().coerceAtLeast(0)
+        updateLyricState(delay = lineDuration)
+        if (handler.hasMessages(timeoutRestore)) {
+            handler.removeMessages(timeoutRestore)
+            handler.sendEmptyMessageDelayed(timeoutRestore, 10000L)
+        } else handler.sendEmptyMessageDelayed(timeoutRestore, 10000L)
+    }
+
+    private fun onLyricStopped(publisher: String?) {
+        if (!isReady) return
+        if (playingApp.isNotEmpty() && publisher != null && playingApp != publisher) return
+
+        lastLyric = ""
+        playingApp = ""
+        isMusicPlaying = false
+        if (lastRunnable.isNotNull()) handler.removeCallbacks(lastRunnable!!)
+        if (handler.hasMessages(timeoutRestore)) handler.removeMessages(timeoutRestore)
+        updateLyricState(showLyric = false)
+    }
+
+    private fun registerLyricReceiver(attempt: Int = 0) {
+        val result = try {
+            SuperLyric.receiver().register(lyricListener)
+        } catch (t: Throwable) {
+            t.log()
+            Receiver.RegisterResult.SERVICE_UNAVAILABLE
+        }
+        "Register SuperLyric: $result, server API: ${SuperLyric.serverApiVersion()}".log()
+        // The SuperLyric service lives in system_server; retry a while in case it is not up yet.
+        if (result == Receiver.RegisterResult.SERVICE_UNAVAILABLE && attempt < 10) {
+            handler.postDelayed({ registerLyricReceiver(attempt + 1) }, 3000L)
         }
     }
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     private fun registerSuperLyric(context: Context) {
-        SuperLyricTool.registerSuperLyric(context, object : ISuperLyric.Stub() {
-            override fun onStop(data: SuperLyricData?) {
-                if (data == null) return
-                if (!isReady) return
-                if (data.playbackState?.state == PlaybackState.STATE_BUFFERING) return
-                if (playingApp.isNotEmpty() && playingApp != data.packageName) return
-
-                lastLyric = ""
-                playingApp = ""
-                isMusicPlaying = false
-                if (lastRunnable.isNotNull()) handler.removeCallbacks(lastRunnable!!)
-                if (handler.hasMessages(timeoutRestore)) handler.removeMessages(timeoutRestore)
-                updateLyricState(showLyric = false)
-            }
-
-            override fun onSuperLyric(data: SuperLyricData?) {
-                if (data == null) return
-                if (!isReady) return
-
-                playingApp = data.packageName
-                if (data.isExistMediaMetadata) {
-                    if (config.titleSwitch) {
-                        if (lastArtist != data.artist || lastAlbum != data.album) {
-                            lastArtist = data.artist
-                            lastAlbum = data.album
-
-                            if (lastRunnable.isNotNull()) handler.removeCallbacks(lastRunnable!!)
-                            lastRunnable = Runnable { showTitleConsumer.accept(data) }
-
-                            ("Title: " + data.title + ", Artist: " + lastArtist + ", Album: " + lastAlbum).log()
-                        }
-                    }
-                }
-                if (data.lyric.isEmpty()) return
-                isMusicPlaying = true
-                lastLyric = data.lyric
-                if (lastRunnable.isNotNull()) handler.postDelayed(lastRunnable!!, 800)
-
-                changeIcon(data)
-                updateLyricState(delay = data.delay)
-                if (handler.hasMessages(timeoutRestore)) {
-                    handler.removeMessages(timeoutRestore)
-                    handler.sendEmptyMessageDelayed(timeoutRestore, 10000L)
-                } else handler.sendEmptyMessageDelayed(timeoutRestore, 10000L)
-            }
-        })
+        registerLyricReceiver()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.registerReceiver(
@@ -742,16 +774,21 @@ class SystemUILyric : BaseHook() {
     }
 
     // 更改图标
-    private fun changeIcon(it: SuperLyricData) {
+    // SuperLyricApi 4.x no longer ships an app icon, so only the user override and built-in icons remain.
+    private fun changeIcon(packageName: String) {
         if (!iconSwitch) return
         if (!isMusicPlaying) return
 
-        lastBase64Icon = config.changeAllIcons.ifEmpty {
-            if (it.base64Icon != "") {
-                it.base64Icon
-            } else {
-                config.getDefaultIcon(it.packageName)
-            }
+        lastBase64Icon = config.changeAllIcons.ifEmpty { config.getDefaultIcon(packageName) }
+    }
+
+    private fun base64ToBitmap(base64: String): Bitmap? {
+        if (base64.isEmpty()) return null
+        return try {
+            val bytes = Base64.decode(base64, Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } catch (_: Throwable) {
+            null
         }
     }
 

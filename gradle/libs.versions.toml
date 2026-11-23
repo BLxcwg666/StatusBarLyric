@@ -9,7 +9,7 @@ kotlin = "2.1.20"
 libxposed-api = "101.0.1"
 libxposed-service = "101.0.0"
 miuix = "0.4.3"
-super-lyric-api = "1.7"
+super-lyric-api = "4.0"
 
 [libraries]
 androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation", version.ref = "androidx-compose-foundation" }

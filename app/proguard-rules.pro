@@ -22,6 +22,13 @@
 -optimizationpasses 5
 -keep class statusbar.lyric.hook.MainHook { <init>(); }
 -adaptresourcefilecontents META-INF/xposed/java_init.list
+# SuperLyricApi 4.x compiles against a hidden-api stub; the real class is in the framework
+-dontwarn android.os.ServiceManager
+# SuperLyricApi 4.0 decodes its wire structs reflectively (no-arg constructor + enum names),
+# but its consumer rules only keep the @Wire fields; R8 then drops the constructors here.
+-keep class com.hchen.superlyricapi.model.** { *; }
+-keep class com.hchen.superlyricapi.wire.Frame { *; }
+-keep enum com.hchen.superlyricapi.wire.Frame$Kind { *; }
 -dontskipnonpubliclibraryclassmembers
 -allowaccessmodification
 -optimizations !code/simplification/arithmetic,!code/simplification/cast,!field/*,!class/merging/*,!code/allocation/variable
