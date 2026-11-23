@@ -36,7 +36,6 @@ import android.view.animation.ScaleAnimation
 import android.view.animation.TranslateAnimation
 import androidx.core.view.isGone
 import androidx.core.view.isVisible
-import statusbar.lyric.tools.Tools.isNotNull
 import java.util.WeakHashMap
 
 object LyricViewTools {
@@ -133,51 +132,32 @@ object LyricViewTools {
         }
     }
 
-    private var alphaAnimation: AnimationSet? = null
-
-    // showView()/hideView() only flip visibility when their fade ends. A fade still pending from the
-    // opposite call would otherwise undo this call later (e.g. hide during a fade-in left the lyric
-    // layout visible with an empty text and just the icon), so finish our own pending fade first.
-    // clearAnimation() fires the end listener synchronously when the fade has already started.
+    // Our own still-running fade-ins. A GONE view keeps being drawn while it has an animation, so
+    // hideView() has to drop it, but must not touch animations SystemUI put on its own views.
     private val pendingFades = WeakHashMap<View, Animation>()
 
-    private fun View.finishPendingFade() {
-        val pending = pendingFades.remove(this) ?: return
-        if (animation === pending) clearAnimation()
+    fun View.hideView() {
+        pendingFades.remove(this)?.let { if (animation === it) clearAnimation() }
+        if (isGone) return
+        visibility = View.GONE
     }
 
-    private fun View.startFade(fade: AnimationSet, endVisibility: Int) {
-        fade.setAnimationListener(object : Animation.AnimationListener {
-            override fun onAnimationStart(animation: Animation) {}
-            override fun onAnimationEnd(animation: Animation) {
-                if (pendingFades[this@startFade] === animation) pendingFades.remove(this@startFade)
-                visibility = endVisibility
-            }
+    // Take the layout slot immediately and only fade the pixels, so a hideView()/showView() pair in the
+    // same frame swaps views in place instead of leaving a gap that neighbours slide into.
+    fun View.showView() {
+        if (isVisible) return
+        visibility = View.VISIBLE
+        val fade = getAlphaAnimation(true).apply {
+            setAnimationListener(object : Animation.AnimationListener {
+                override fun onAnimationStart(animation: Animation) {}
+                override fun onAnimationEnd(animation: Animation) {
+                    if (pendingFades[this@showView] === animation) pendingFades.remove(this@showView)
+                }
 
-            override fun onAnimationRepeat(animation: Animation) {}
-        })
+                override fun onAnimationRepeat(animation: Animation) {}
+            })
+        }
         pendingFades[this] = fade
         startAnimation(fade)
-    }
-
-    fun View.hideView(anim: Boolean = true) {
-        finishPendingFade()
-        if (isGone) return
-        if (anim) {
-            alphaAnimation = getAlphaAnimation(false, 0).also { startFade(it, View.GONE) }
-        } else {
-            visibility = View.GONE
-        }
-    }
-
-    fun View.cancelAnimation() {
-        if (alphaAnimation.isNotNull())
-            alphaAnimation!!.cancel()
-    }
-
-    fun View.showView() {
-        finishPendingFade()
-        if (isVisible) return
-        startFade(getAlphaAnimation(true), View.VISIBLE)
     }
 }

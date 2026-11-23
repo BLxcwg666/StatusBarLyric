@@ -77,7 +77,6 @@ import statusbar.lyric.tools.BlurTools.cornerRadius
 import statusbar.lyric.tools.BlurTools.setBackgroundBlur
 import statusbar.lyric.tools.LogTools.log
 import statusbar.lyric.tools.LyricViewTools
-import statusbar.lyric.tools.LyricViewTools.cancelAnimation
 import statusbar.lyric.tools.LyricViewTools.hideView
 import statusbar.lyric.tools.LyricViewTools.randomAnima
 import statusbar.lyric.tools.LyricViewTools.showView
@@ -496,6 +495,7 @@ class SystemUILyric : BaseHook() {
         }
         canLoad = false
         handler.removeCallbacks(anchorRescanRunnable)
+        "Anchor captured, parent layoutTransition=${targetView.layoutTransition != null}".log()
         lyricInit()
     }
 
@@ -765,15 +765,14 @@ class SystemUILyric : BaseHook() {
         isHiding = false
         goMainThread {
             lastColor = clockView.currentTextColor
-            lyricLayout.cancelAnimation()
-            lyricLayout.showView()
-            if (config.hideTime) {
-                clockView.hideView()
-                XiaomiHooks.getPadClockView()?.hideView()
-            }
-            if (config.hideNotificationIcon) notificationIconArea?.hideView()
-            XiaomiHooks.getMiuiNetworkSpeedView()?.hideView()
-            XiaomiHooks.getCarrierLabel()?.hideView()
+            applyVisibility(
+                lyricLayout to true,
+                (if (config.hideTime) clockView else null) to false,
+                (if (config.hideTime) XiaomiHooks.getPadClockView() else null) to false,
+                (if (config.hideNotificationIcon) notificationIconArea else null) to false,
+                XiaomiHooks.getMiuiNetworkSpeedView() to false,
+                XiaomiHooks.getCarrierLabel() to false,
+            )
 
             lyricView.apply {
                 val lyricWidth = getLyricWidth(lyric)
@@ -830,6 +829,21 @@ class SystemUILyric : BaseHook() {
         }
     }
 
+    // The status bar containers may animate layout changes (animateLayoutChanges). That turns a swap
+    // into a fade-out, a gap that neighbouring icons slide into, then a delayed slide-in of the clock,
+    // so detach those transitions for the duration of the swap. Views already in place are skipped.
+    private fun applyVisibility(vararg changes: Pair<View?, Boolean>) {
+        val pending = changes.mapNotNull { (view, show) ->
+            if (view != null && (view.visibility == View.VISIBLE) != show) view to show else null
+        }
+        if (pending.isEmpty()) return
+        val transitions = pending.mapNotNull { it.first.parent as? ViewGroup }.distinct()
+            .mapNotNull { parent -> parent.layoutTransition?.let { parent to it } }
+        transitions.forEach { (parent, _) -> parent.layoutTransition = null }
+        pending.forEach { (view, show) -> if (show) view.showView() else view.hideView() }
+        transitions.forEach { (parent, transition) -> parent.layoutTransition = transition }
+    }
+
     // 适用于不考虑状态的隐藏
     private fun hideLyric() {
         if (!isReady) return
@@ -838,14 +852,16 @@ class SystemUILyric : BaseHook() {
 
         "Hiding LyricView".log()
         goMainThread {
-            lyricLayout.hideView(false)
+            applyVisibility(
+                lyricLayout to false,
+                clockView to true,
+                notificationIconArea to true,
+                XiaomiHooks.getPadClockView() to true,
+                XiaomiHooks.getCarrierLabel() to true,
+                XiaomiHooks.getMiuiNetworkSpeedView() to true,
+            )
             lyricView.setText("")
-            clockView.showView()
             if (config.titleSwitch) titleDialog.hideTitle()
-            notificationIconArea?.showView()
-            XiaomiHooks.getPadClockView()?.showView()
-            XiaomiHooks.getCarrierLabel()?.showView()
-            XiaomiHooks.getMiuiNetworkSpeedView()?.showView()
             XiaomiHooks.getNotificationBigTime()?.visibility = View.VISIBLE
         }
     }

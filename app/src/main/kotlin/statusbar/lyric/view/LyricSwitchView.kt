@@ -22,7 +22,6 @@
 
 package statusbar.lyric.view
 
-import android.animation.LayoutTransition
 import android.content.Context
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -49,10 +48,24 @@ open class LyricSwitchView(context: Context) : TextSwitcher(context) {
         }
     }
 
+    private var targetWidth = 0
+    private val syncWidthRunnable = Runnable { applyToAllViews { it.width = targetWidth } }
+
+    // Called right before setText(): only the incoming line takes the new width now. The outgoing
+    // line keeps its width until its out-animation is over, otherwise a shorter new line clips the
+    // old one mid-fade. (A LayoutTransition used to be created here on every line; its default
+    // appear/disappear alpha animators fought the switcher's own in/out animations.)
     fun setWidth(width: Int) {
-        layoutTransition = LayoutTransition()
-        layoutTransition.enableTransitionType(LayoutTransition.CHANGING)
-        applyToAllViews { it.width = width }
+        targetWidth = width
+        removeCallbacks(syncWidthRunnable)
+        (nextView as? LyricTextView)?.width = width
+        val outgoing = currentView as? LyricTextView
+        val outDuration = outAnimation?.duration ?: 0L
+        if (outgoing == null || outgoing.text.isNullOrEmpty() || outDuration <= 0L) {
+            syncWidthRunnable.run()
+        } else {
+            postDelayed(syncWidthRunnable, outDuration)
+        }
     }
 
     fun setTextColor(color: Int) {
