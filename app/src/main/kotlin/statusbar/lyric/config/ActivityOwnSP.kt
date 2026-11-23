@@ -32,21 +32,21 @@ import statusbar.lyric.tools.Tools
 object ActivityOwnSP {
     val ownSP by lazy { Tools.getSP(MainActivity.appContext, CONFIG_NAME) }
     val config by lazy { Config(ownSP) }
-    private val ownEditor by lazy { ownSP.edit() }
 
     private fun set(key: String, any: Any) {
+        val editor = ownSP.edit()
         when (any) {
-            is Int -> ownEditor.putInt(key, any)
-            is Float -> ownEditor.putFloat(key, any)
-            is String -> ownEditor.putString(key, any)
-            is Boolean -> ownEditor.putBoolean(key, any)
-            is Long -> ownEditor.putLong(key, any)
+            is Int -> editor.putInt(key, any)
+            is Float -> editor.putFloat(key, any)
+            is String -> editor.putString(key, any)
+            is Boolean -> editor.putBoolean(key, any)
+            is Long -> editor.putLong(key, any)
         }
-        ownEditor.apply()
+        editor.apply()
     }
 
     private fun remove(key: String) {
-        ownEditor.remove(key).apply()
+        ownSP.edit().remove(key).apply()
     }
 
     fun updateConfigVer() {

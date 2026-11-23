@@ -11,7 +11,6 @@ pluginManagement {
         }
         mavenCentral()
         gradlePluginPortal()
-        maven("https://api.xposed.info/")
     }
 }
 
@@ -21,7 +20,6 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven("https://jitpack.io/")
-        maven("https://api.xposed.info/")
     }
 }
 

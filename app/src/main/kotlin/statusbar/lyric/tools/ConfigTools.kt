@@ -22,62 +22,50 @@
 
 package statusbar.lyric.tools
 
-import android.annotation.SuppressLint
 import android.content.SharedPreferences
-import de.robv.android.xposed.XSharedPreferences
-import statusbar.lyric.tools.Tools.isNull
 
-class ConfigTools {
-    private var xSP: XSharedPreferences? = null
-    private var mSP: SharedPreferences? = null
-    private var mSPEditor: SharedPreferences.Editor? = null
+class ConfigTools(private val mSP: SharedPreferences?, private val readOnly: Boolean = false) {
 
-    constructor(xSharedPreferences: XSharedPreferences?) {
-        xSP = xSharedPreferences
-        mSP = xSharedPreferences
-    }
+    // RemotePreferences are pushed by the framework, nothing to reload manually.
+    fun reload() {}
 
-    @SuppressLint("CommitPrefEdits")
-    constructor(sharedPreferences: SharedPreferences) {
-        mSP = sharedPreferences
-        mSPEditor = sharedPreferences.edit()
-    }
-
-    fun reload() {
-        xSP.isNull {
-            xSP = Tools.getPref("Lyric_Config")
-            mSP = xSP
-            return
-        }
-        xSP?.reload()
-    }
-
+    // A fresh editor per write: RemotePreferences.Editor never resets its pending state after apply().
     fun put(key: String?, any: Any) {
+        if (readOnly) return
+        val editor = mSP?.edit() ?: return
         when (any) {
-            is Int -> mSPEditor?.putInt(key, any)
-            is String -> mSPEditor?.putString(key, any)
-            is Boolean -> mSPEditor?.putBoolean(key, any)
-            is Float -> mSPEditor?.putFloat(key, any)
+            is Int -> editor.putInt(key, any)
+            is String -> editor.putString(key, any)
+            is Boolean -> editor.putBoolean(key, any)
+            is Float -> editor.putFloat(key, any)
+            else -> return
         }
-        mSPEditor?.apply()
+        editor.apply()
     }
 
     @Suppress("UNCHECKED_CAST")
     fun <T> opt(key: String, defValue: T): T {
-        mSP.isNull {
-            return defValue
-        }
-        return when (defValue) {
-            is String -> mSP!!.getString(key, defValue.toString()) as T
-            is Int -> mSP!!.getInt(key, defValue) as T
-            is Boolean -> mSP!!.getBoolean(key, defValue) as T
-            is Double -> mSP!!.getFloat(key, defValue.toFloat()) as T
-            is Float -> mSP!!.getFloat(key, defValue) as T
-            else -> "" as T
+        val sp = mSP ?: return defValue
+        return try {
+            when (defValue) {
+                is String -> sp.getString(key, defValue.toString()) as T
+                is Int -> sp.getInt(key, defValue) as T
+                is Boolean -> sp.getBoolean(key, defValue) as T
+                is Double -> sp.getFloat(key, defValue.toFloat()) as T
+                is Float -> sp.getFloat(key, defValue) as T
+                else -> "" as T
+            }
+        } catch (_: ClassCastException) {
+            defValue
         }
     }
 
+    fun registerOnChange(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        mSP?.registerOnSharedPreferenceChangeListener(listener)
+    }
+
     fun clearConfig() {
-        mSPEditor?.clear()?.apply()
+        if (readOnly) return
+        mSP?.edit()?.clear()?.apply()
     }
 }

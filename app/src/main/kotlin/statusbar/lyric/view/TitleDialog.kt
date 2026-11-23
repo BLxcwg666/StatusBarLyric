@@ -46,9 +46,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.graphics.toColorInt
 import androidx.core.view.isVisible
-import com.github.kyuubiran.ezxhelper.EzXHelper
 import statusbar.lyric.R
 import statusbar.lyric.config.XposedOwnSP.config
+import statusbar.lyric.hook.HookEnv
 import statusbar.lyric.tools.LyricViewTools
 import statusbar.lyric.tools.Tools.dp2px
 
@@ -107,7 +107,7 @@ class TitleDialog(context: Context) : Dialog(context) {
                     height = dp2px(context, 15f)
                     setMargins(0, 0, 15, 0)
                 }
-            setImageDrawable(EzXHelper.moduleRes.getDrawable(R.drawable.ic_song, null))
+            setImageDrawable(HookEnv.moduleRes.getDrawable(R.drawable.ic_song, null))
         }
     }
     private var content: LinearLayout = LinearLayout(context).apply {

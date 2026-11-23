@@ -26,9 +26,11 @@ import android.util.Log
 
 object LogTools {
     private const val MAX_LENGTH = 4000
-    private const val TAG = "StatusBarLyric"
-    private const val XP_TAG = "LSPosed-Bridge"
+    const val TAG = "StatusBarLyric"
     private var outprint = false
+
+    // Set by the Xposed entry so hook-side logs also land in the framework's module log.
+    var sink: ((String) -> Unit)? = null
 
 
     fun Any?.log(): Any? {
@@ -44,12 +46,12 @@ object LogTools {
                     content.substring(MAX_LENGTH * i, max)
                 }
                 Log.d(TAG, value)
-                Log.d(XP_TAG, "$TAG:$value")
+                sink?.invoke(value)
             }
 
         } else {
             Log.d(TAG, content)
-            Log.d(XP_TAG, "$TAG:$content")
+            sink?.invoke(content)
         }
         return this
     }

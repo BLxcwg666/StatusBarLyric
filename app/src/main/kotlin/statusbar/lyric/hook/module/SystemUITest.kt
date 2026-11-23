@@ -23,7 +23,6 @@
 package statusbar.lyric.hook.module
 
 import android.annotation.SuppressLint
-import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -34,14 +33,15 @@ import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
-import com.github.kyuubiran.ezxhelper.EzXHelper.moduleRes
-import com.github.kyuubiran.ezxhelper.HookFactory.`-Static`.createHook
-import com.github.kyuubiran.ezxhelper.finders.MethodFinder.`-Static`.methodFinder
-import de.robv.android.xposed.XC_MethodHook
+import io.github.libxposed.api.XposedInterface
 import statusbar.lyric.R
 import statusbar.lyric.config.XposedOwnSP.config
 import statusbar.lyric.data.Data
 import statusbar.lyric.hook.BaseHook
+import statusbar.lyric.hook.HookEnv
+import statusbar.lyric.hook.HookEnv.moduleRes
+import statusbar.lyric.hook.createHook
+import statusbar.lyric.hook.methodFinder
 import statusbar.lyric.tools.ActivityTestTools.receiveClass
 import statusbar.lyric.tools.LogTools.log
 import statusbar.lyric.tools.LyricViewTools.hideView
@@ -53,7 +53,7 @@ import java.time.LocalDateTime
 import java.util.Locale
 
 class SystemUITest : BaseHook() {
-    private lateinit var hook: XC_MethodHook.Unhook
+    private lateinit var hook: XposedInterface.HookHandle
     private var lastTime: Int = 0
     lateinit var context: Context
     lateinit var lastView: TextView
@@ -72,26 +72,19 @@ class SystemUITest : BaseHook() {
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun init() {
-        var isLoad = false
-        Application::class.java.methodFinder().filterByName("attach").first().createHook {
-            after {
-                if (isLoad) return@after
-                isLoad = true
-                context = it.args[0] as Context
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    context.registerReceiver(
-                        TestReceiver(),
-                        IntentFilter("TestReceiver"),
-                        Context.RECEIVER_EXPORTED
-                    )
-                } else {
-                    context.registerReceiver(TestReceiver(), IntentFilter("TestReceiver"))
-                }
-                moduleRes.getString(R.string.start_hooking_text_view).log()
-                hook()
-
-            }
+        // init() already runs inside Application.attach, so the context is available directly.
+        context = HookEnv.appContext
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(
+                TestReceiver(),
+                IntentFilter("TestReceiver"),
+                Context.RECEIVER_EXPORTED
+            )
+        } else {
+            context.registerReceiver(TestReceiver(), IntentFilter("TestReceiver"))
         }
+        moduleRes.getString(R.string.start_hooking_text_view).log()
+        hook()
     }
 
     private fun hook() {

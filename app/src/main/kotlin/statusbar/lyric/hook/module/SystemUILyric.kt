@@ -23,12 +23,11 @@
 package statusbar.lyric.hook.module
 
 import android.annotation.SuppressLint
-import android.app.AndroidAppHelper
-import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.LinearGradient
@@ -53,13 +52,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.graphics.toColorInt
 import androidx.core.util.Consumer
-import com.github.kyuubiran.ezxhelper.ClassUtils.loadClassOrNull
-import com.github.kyuubiran.ezxhelper.EzXHelper.moduleRes
-import com.github.kyuubiran.ezxhelper.HookFactory
-import com.github.kyuubiran.ezxhelper.HookFactory.`-Static`.createHook
-import com.github.kyuubiran.ezxhelper.ObjectHelper.Companion.objectHelper
-import com.github.kyuubiran.ezxhelper.finders.ConstructorFinder.`-Static`.constructorFinder
-import com.github.kyuubiran.ezxhelper.finders.MethodFinder.`-Static`.methodFinder
 import com.hchen.superlyricapi.ISuperLyric
 import com.hchen.superlyricapi.SuperLyricData
 import com.hchen.superlyricapi.SuperLyricTool
@@ -67,6 +59,14 @@ import com.hchen.superlyricapi.SuperLyricTool.base64ToBitmap
 import statusbar.lyric.R
 import statusbar.lyric.config.XposedOwnSP.config
 import statusbar.lyric.hook.BaseHook
+import statusbar.lyric.hook.HookEnv
+import statusbar.lyric.hook.HookEnv.moduleRes
+import statusbar.lyric.hook.HookFactory
+import statusbar.lyric.hook.constructorFinder
+import statusbar.lyric.hook.createHook
+import statusbar.lyric.hook.loadClassOrNull
+import statusbar.lyric.hook.methodFinder
+import statusbar.lyric.hook.objectHelper
 import statusbar.lyric.hook.module.xiaomi.FocusNotifyController
 import statusbar.lyric.hook.module.xiaomi.XiaomiHooks
 import statusbar.lyric.tools.BlurTools.cornerRadius
@@ -97,7 +97,7 @@ import kotlin.math.abs
 import kotlin.math.min
 
 class SystemUILyric : BaseHook() {
-    private val context: Context by lazy { AndroidAppHelper.currentApplication() }
+    private val context: Context get() = HookEnv.appContext
 
     private var lastLyric: String = ""
     private var lastColor: Int by observableChange(Color.WHITE) { oldValue, newValue ->
@@ -220,11 +220,8 @@ class SystemUILyric : BaseHook() {
     @SuppressLint("DiscouragedApi", "NewApi")
     override fun init() {
         "Initializing Hook".log()
-        Application::class.java.methodFinder().filterByName("attach").single().createHook {
-            after { hook ->
-                registerSuperLyric(hook.args[0] as Context)
-            }
-        }
+        // init() already runs inside Application.attach, which is where this used to be registered.
+        registerSuperLyric(context)
 
         loadClassOrNull(config.textViewClassName).isNotNull {
             TextView::class.java.methodFinder().filterByName("onLayout").single()
@@ -595,6 +592,13 @@ class SystemUILyric : BaseHook() {
         }
     }
     private var lastRunnable: Runnable? = null
+    private val configChangedRunnable = Runnable { if (isReady) updateConfig() }
+
+    // Held in a field: SharedPreferences implementations may only keep weak references to listeners.
+    private val configChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        handler.removeCallbacks(configChangedRunnable)
+        handler.postDelayed(configChangedRunnable, 300)
+    }
     private val showTitleConsumer: Consumer<SuperLyricData> = object : Consumer<SuperLyricData> {
         override fun accept(value: SuperLyricData) {
             if (!isMusicPlaying) return
@@ -662,6 +666,7 @@ class SystemUILyric : BaseHook() {
         } else {
             context.registerReceiver(updateConfig, IntentFilter("updateConfig"))
         }
+        config.registerChangeListener(configChangeListener)
 
         if (config.hideLyricWhenLockScreen) {
             val screenLockFilter = IntentFilter().apply {

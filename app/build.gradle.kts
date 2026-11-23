@@ -58,11 +58,24 @@ android {
     buildFeatures.buildConfig = true
     dependenciesInfo.includeInApk = false
     kotlin.jvmToolchain(21)
-    packaging.resources.excludes += "**"
+    // META-INF/xposed/* must survive packaging, so exclude everything else explicitly instead of "**"
+    packaging.resources.excludes += listOf(
+        "kotlin/**",
+        "META-INF/*",
+        "META-INF/androidx/**",
+        "META-INF/com/**",
+        "META-INF/maven/**",
+        "META-INF/proguard/**",
+        "META-INF/services/**",
+        "META-INF/versions/**",
+        "DebugProbesKt.bin",
+        "kotlin-tooling-metadata.json",
+    )
 }
 
 dependencies {
-    compileOnly(libs.xposed)
+    compileOnly(libs.libxposed.api)
+    implementation(libs.libxposed.service)
 
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.foundation)
@@ -74,7 +87,6 @@ dependencies {
     implementation(libs.haze)
     implementation(libs.miuix)
 
-    implementation(libs.ezXHelper)
     implementation(libs.superlyricapi)
 
     debugImplementation(libs.androidx.ui.tooling.preview)

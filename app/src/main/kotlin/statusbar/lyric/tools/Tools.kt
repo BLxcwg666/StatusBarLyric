@@ -35,14 +35,12 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import com.github.kyuubiran.ezxhelper.EzXHelper
-import de.robv.android.xposed.XSharedPreferences
-import de.robv.android.xposed.XposedHelpers
 import statusbar.lyric.BuildConfig
 import statusbar.lyric.MainActivity
+import statusbar.lyric.ModuleService
 import statusbar.lyric.R
 import statusbar.lyric.config.XposedOwnSP
-import statusbar.lyric.tools.ActivityTools.isHook
+import statusbar.lyric.hook.HookEnv
 import statusbar.lyric.tools.LogTools.log
 import java.io.DataOutputStream
 import java.lang.reflect.Field
@@ -125,7 +123,7 @@ object Tools {
         val parentViewId = XposedOwnSP.config.parentViewId
         val textSize = XposedOwnSP.config.textSize
         if (textViewClassName.isEmpty() || parentViewClassName.isEmpty() || textViewId == 0 || parentViewId == 0 || textSize == 0f) {
-            EzXHelper.moduleRes.getString(R.string.load_class_empty).log()
+            HookEnv.moduleRes.getString(R.string.load_class_empty).log()
             return false
         }
         if (this is TextView) {
@@ -168,22 +166,18 @@ object Tools {
 
     fun String.dispose() = this.regexReplace(" ", "").regexReplace("\n", "")
 
-    fun getPref(key: String): XSharedPreferences? {
-        return try {
-            val pref = XSharedPreferences(BuildConfig.APPLICATION_ID, key)
-            if (pref.file.canRead()) pref else null
-        } catch (e: Throwable) {
-            e.log()
-            null
-        }
-    }
-
+    // Module active: config lives in the framework (RemotePreferences) so SystemUI can read it.
+    // Module inactive: fall back to a private local file.
     fun getSP(context: Context, key: String): SharedPreferences {
-        @Suppress("DEPRECATION", "WorldReadableFiles")
+        ModuleService.service?.let { service ->
+            try {
+                return service.getRemotePreferences(key)
+            } catch (t: Throwable) {
+                t.log()
+            }
+        }
         return context.createDeviceProtectedStorageContext()
-            .getSharedPreferences(
-                key, if (isHook()) Context.MODE_WORLD_READABLE else Context.MODE_PRIVATE
-            )
+            .getSharedPreferences(key, Context.MODE_PRIVATE)
     }
 
     fun shell(command: String, isSu: Boolean) {
@@ -246,7 +240,7 @@ object Tools {
     fun Any?.isNotNull() = this != null
 
     fun Any.getObjectField(fieldName: String): Any? {
-        return XposedHelpers.getObjectField(this, fieldName)
+        return ReflectTools.findField(this.javaClass, fieldName).get(this)
     }
 
     fun Any.getSuperObjectField(fieldName: String): Any? {
@@ -273,7 +267,7 @@ object Tools {
 
     fun Any?.existField(fieldName: String): Boolean {
         if (this == null) return false
-        return XposedHelpers.findFieldIfExists(this.javaClass, fieldName).isNotNull()
+        return ReflectTools.findFieldOrNull(this.javaClass, fieldName).isNotNull()
     }
 
     fun Any?.existMethod(methodName: String): Boolean {
@@ -282,17 +276,17 @@ object Tools {
 
     fun Any.getObjectFieldIfExist(fieldName: String): Any? {
         return try {
-            XposedHelpers.getObjectField(this, fieldName)
+            ReflectTools.findField(this.javaClass, fieldName).get(this)
         } catch (_: Throwable) {
             null
         }
     }
 
     fun Any.setObjectField(fieldName: String, value: Any?) {
-        XposedHelpers.setObjectField(this, fieldName, value)
+        ReflectTools.findField(this.javaClass, fieldName).set(this, value)
     }
 
     fun Any.callMethod(methodName: String, vararg args: Any): Any? {
-        return XposedHelpers.callMethod(this, methodName, *args)
+        return ReflectTools.callMethod(this, methodName, *args)
     }
 }

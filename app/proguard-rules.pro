@@ -21,7 +21,7 @@
 #-renamesourcefileattribute SourceFile
 -optimizationpasses 5
 -keep class statusbar.lyric.hook.MainHook { <init>(); }
--keep class statusbar.lyric.tools.ActivityTools { isHook(); }
+-adaptresourcefilecontents META-INF/xposed/java_init.list
 -dontskipnonpubliclibraryclassmembers
 -allowaccessmodification
 -optimizations !code/simplification/arithmetic,!code/simplification/cast,!field/*,!class/merging/*,!code/allocation/variable

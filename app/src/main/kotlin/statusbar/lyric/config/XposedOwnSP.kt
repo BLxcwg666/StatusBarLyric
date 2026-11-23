@@ -23,8 +23,8 @@
 package statusbar.lyric.config
 
 import statusbar.lyric.config.Config.Companion.CONFIG_NAME
-import statusbar.lyric.tools.Tools
+import statusbar.lyric.hook.HookEnv
 
 object XposedOwnSP {
-    val config: Config by lazy { Config(Tools.getPref(CONFIG_NAME)) }
+    val config: Config by lazy { Config(HookEnv.remotePreferences(CONFIG_NAME), readOnly = true) }
 }

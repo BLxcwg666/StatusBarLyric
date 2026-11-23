@@ -51,6 +51,7 @@ import statusbar.lyric.tools.Tools.isNotNull
 
 class MainActivity : ComponentActivity() {
     private val appTestReceiver by lazy { AppTestReceiver() }
+    private var isInitialized = false
     lateinit var createDocumentLauncher: ActivityResultLauncher<Intent>
     lateinit var openDocumentLauncher: ActivityResultLauncher<Intent>
 
@@ -60,6 +61,8 @@ class MainActivity : ComponentActivity() {
         var isLoad: Boolean = false
 
         var testReceiver = false
+
+        private const val SERVICE_BIND_TIMEOUT = 1500L
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,16 +94,21 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        isLoad = isHook()
-        init()
+        // Config storage depends on whether the framework service is bound, so wait for it first.
+        ModuleService.awaitBinding(SERVICE_BIND_TIMEOUT) {
+            if (isFinishing || isDestroyed) return@awaitBinding
+            isLoad = isHook()
+            init()
+            isInitialized = true
 
-        setContent {
-            App()
+            setContent {
+                App()
+            }
         }
     }
 
     override fun onDestroy() {
-        unregisterReceiver(appTestReceiver)
+        if (isInitialized) unregisterReceiver(appTestReceiver)
         super.onDestroy()
     }
 

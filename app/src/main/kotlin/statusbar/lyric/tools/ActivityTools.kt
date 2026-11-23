@@ -30,6 +30,7 @@ import android.widget.Toast
 import androidx.core.graphics.toColorInt
 import androidx.core.net.toUri
 import statusbar.lyric.MainActivity
+import statusbar.lyric.ModuleService
 import statusbar.lyric.R
 import statusbar.lyric.data.Data
 import statusbar.lyric.tools.LogTools.log
@@ -41,7 +42,7 @@ object ActivityTools {
 
     lateinit var dataList: ArrayList<Data>
 
-    fun isHook(): Boolean = false
+    fun isHook(): Boolean = ModuleService.isBound
 
     fun changeConfig(type: String = "normal", path: String = "") {
         Thread {
